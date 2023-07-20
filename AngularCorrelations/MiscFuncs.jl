@@ -255,7 +255,7 @@ function get_slice_stats(
     _θemiMax::Real,
     _EMin::Real,
     _EMax::Real,
-    _theta_esc::Vector{Float64},
+    _theta_esc::Vector{<:Real},
     _binWidth = 1.0,
     _weights::AbstractWeights = Weights(ones(eltype(_theta_esc),length(_theta_esc))) # if no weights are specified, use 1.0
 )
@@ -410,6 +410,56 @@ function turn90_cc(_m)    # returns a matrix which elements are turned by 90degr
     return mat
 end
 
+
+function get_gs_df(_tree, _dϕ, _sign = "p"; _theta = "thetaEmitted", _phi = "thetaEscaped")
+    if("weights" in names(_tree))
+        fh2d = Hist2D(                                          
+            (_tree[!, _theta], _tree[!, _phi]),  
+            Weights(_tree.weights),    
+            (0:_dϕ:180, 0:_dϕ:180), 
+        ) 
+    else
+        fh2d = Hist2D(                                          
+            (_tree[!, _theta], _tree[!, _phi]),  
+            (0:_dϕ:180, 0:_dϕ:180), 
+        ) 
+    end
+
+    df = DataFrame(k = get_k_factors(fh2d) .* _dϕ)  # Gs saved in a dataframe first column is k-factor, next columns correspond to ϕ-slices
+    
+    for (i, n) in enumerate(1:_dϕ:180)
+        cutEdges1 = get_cut_edges(n - 1, 1, _dϕ, _sign)                   # provides the lower and upper cut 
+        if("weights" in names(_tree))
+            
+            sdf = @chain _tree begin                                         # filter out the dataframe
+                @subset((cutEdges1[1] .<= _tree[!,_phi] .<= cutEdges1[2]))
+                select(_phi, _theta, :weights)
+            end
+                
+            fh2d = Hist2D(
+                (sdf[!, _theta], sdf[!, _phi]),
+                Weights(sdf.weights),
+                (0:_dϕ:180, 0:_dϕ:180),
+                )
+        else
+            sdf = @chain _tree begin                                         # filter out the dataframe
+                @subset((cutEdges1[1] .<= _tree[!,_phi] .<= cutEdges1[2]))
+                select(_phi, _theta)
+            end
+
+            fh2d = Hist2D(
+                (sdf[!, _theta], sdf[!, _phi]),
+                (0:_dϕ:180, 0:_dϕ:180),
+                )
+        end
+        
+    
+        colName = string(cutEdges1[1],"-",cutEdges1[2])   # df column name in format minϕ-maxϕ
+        df[!,colName] = get_diagonal_sums(fh2d)
+    end
+
+    return df
+end
 
 function get_gs_df(_tree, _dϕ, _sign = "p")
     fh2d = Hist2D(                                          
